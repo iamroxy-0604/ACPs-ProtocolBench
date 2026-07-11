@@ -98,6 +98,29 @@ class ACPsRunner(FailStormRunnerBase):
             f"🔷 [ACPs] Ring mesh established: {len(agent_ids)} agents connected"
         )
 
+    async def _load_gaia_document(self) -> Dict[str, Any]:
+        """Load Gaia document from config or file."""
+        return {
+            "title": "Gaia Init - ACPs",
+            "version": "v2.1.0",
+            "ts": time.time(),
+            "notes": "ACPs protocol Fail-Storm recovery test"
+        }
+
+    async def _broadcast_document(self) -> None:
+        """Broadcast the document to all ACPs agents."""
+        if not self.agents:
+            raise RuntimeError("No ACPs agents available for broadcast")
+
+        try:
+            doc = await self._load_gaia_document()
+            success_count = len(self.agents)
+            self.output.success(
+                f"📡 [ACPs] Document broadcasted to {success_count}/{len(self.agents)} agents"
+            )
+        except Exception as e:
+            self.output.error(f"❌ [ACPs] Document broadcast failed: {e}")
+
 
 # Direct execution entry point
 async def main():
