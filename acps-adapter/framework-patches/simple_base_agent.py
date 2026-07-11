@@ -47,6 +47,10 @@ class SimpleBaseAgent:
         # Status tracking
         self._initialized = False
         self._running = False
+
+        # Protocol identity
+        self.protocol = "simple"
+        self.aic = f"agent:{agent_id}"
     
     @staticmethod
     def _find_free_port() -> int:
@@ -128,6 +132,8 @@ class SimpleBaseAgent:
     ) -> "SimpleBaseAgent":
         """Create ACPs agent instance using AIP RPC communication."""
         agent = cls(agent_id=agent_id, host=host, port=port, executor=executor)
+        agent.protocol = "acps"
+        agent.aic = f"1.2.156.3088.1.failstorm.{agent_id}"
         await agent._start_server()
         agent._initialized = True
         return agent
@@ -198,20 +204,21 @@ class SimpleBaseAgent:
         self._running = True
     
     async def _wait_for_server_ready(self, timeout: float = 10.0) -> None:
-        """Wait for server to be ready."""
+        """Wait for server to be ready (uses aiohttp to avoid httpx event loop conflict)."""
         start_time = time.time()
-        
+
         while time.time() - start_time < timeout:
             try:
                 url = f"http://{self.host}:{self.port}/health"
-                response = await self._httpx_client.get(url, timeout=2.0)
-                if response.status_code == 200:
-                    return
+                async with ClientSession() as session:
+                    async with session.get(url) as response:
+                        if response.status == 200:
+                            return
             except Exception:
                 pass
-            
+
             await asyncio.sleep(0.1)
-        
+
         raise RuntimeError(f"Server failed to start within {timeout}s")
     
     async def stop(self) -> None:
