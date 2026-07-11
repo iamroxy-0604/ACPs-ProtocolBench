@@ -1,0 +1,54 @@
+scenario:
+  name: "deepseek-v4-pro"
+  protocol: "acps"
+  agent_count: 8
+  total_runtime: 600.0  # 10 minutes for testing
+  fault_injection_time: 120.0
+  recovery_duration: 60
+  kill_fraction: 0.375
+  heartbeat_interval: 10.0
+  heartbeat_timeout: 30.0
+  cyclic_faults: true
+  fault_cycle_interval: 120.0
+  agents_per_fault: 3
+  normal_phase_duration: 120.0
+  max_groups: 5  # Limited for testing
+
+llm:
+  type: "openai"
+  model: "deepseek-v4-pro"
+  openai_api_key: "sk-44252ae55edf47c49a8ad4408ec13b9c"
+  openai_base_url: "https://api.deepseek.com/v1"
+  temperature: 0.0
+  max_tokens: 4096
+  timeout: 30.0
+
+network:
+  base_port: 9300
+  heartbeat_interval: 5.0
+  heartbeat_timeout: 12.0
+  connection_timeout: 10.0
+
+agents:
+  base_port: 9300
+  host: "127.0.0.1"
+
+results:
+  base_path: "results"
+  save_intermediate: true
+  save_final: true
+  detailed_metrics: true
+
+shard_qa:
+  data_dir: "data/shards"
+  normal_phase_duration: 30.0
+  qa_cycle_timeout: 10.0
+
+output:
+  results_file: "failstorm_metrics_acps.json"
+  logs_dir: "logs"
+  artifacts_dir: "artifacts"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
