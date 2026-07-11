@@ -242,16 +242,48 @@ class SimpleBaseAgent:
         return self._running and self._site is not None
     
     async def health_check(self) -> bool:
-        """Check if the agent is healthy."""
+        """Check if the agent is healthy (uses aiohttp to avoid httpx conflict)."""
         if not self.is_running():
             return False
-        
+
         try:
             url = f"http://{self.host}:{self.port}/health"
-            response = await self._httpx_client.get(url, timeout=5.0)
-            return response.status_code == 200
+            async with ClientSession() as session:
+                async with session.get(url) as response:
+                    return response.status == 200
         except Exception:
             return False
+
+    async def send_message(self, dst_id: str, payload: Dict[str, Any]) -> Any:
+        """Send message to another agent via aiohttp (avoids httpx ↔ aiohttp conflict)."""
+        dst_agent = None
+        # Try to find destination agent through executor or network reference
+        if self.executor and hasattr(self.executor, 'agents'):
+            dst_agent = self.executor.agents.get(dst_id)
+        if self.executor and hasattr(self.executor, 'network'):
+            dst_agent = self.executor.network.agents.get(dst_id)
+
+        # Fallback: look up port from known ring topology
+        dst_port = None
+        if dst_agent and hasattr(dst_agent, 'port'):
+            dst_port = dst_agent.port
+        else:
+            # Try to infer port from agent ID pattern (agent0→9300, agent1→9301, etc.)
+            import re
+            match = re.search(r'(\d+)$', dst_id)
+            if match:
+                base_port = getattr(self, 'port', 9300) - (int(re.search(r'(\d+)$', self.agent_id).group(1)) if re.search(r'(\d+)$', self.agent_id) else 0)
+                dst_port = base_port + int(match.group(1))
+
+        if dst_port is None:
+            raise ValueError(f"Cannot find port for agent {dst_id}")
+
+        url = f"http://127.0.0.1:{dst_port}/message"
+        async with ClientSession() as session:
+            async with session.post(url, json=payload) as response:
+                if response.status == 200:
+                    return await response.json()
+                raise Exception(f"HTTP {response.status}: {await response.text()}")
     
     def get_card(self) -> Dict[str, Any]:
         """Get agent card."""
