@@ -68,7 +68,14 @@ class ACPsProtocolBackend(BaseProtocolBackend):
         corr = correlation_id or payload.get("correlation_id")
         sender_id = payload.get("sender_id", "acps_sender")
 
-        now_utc = datetime.now(timezone.utc).isoformat()
+        probe_config = probe_config or {}
+        sent_at = probe_config.get("sent_at")
+        if sent_at is None and "clock_skew_seconds" in probe_config:
+            sent_at = datetime.fromtimestamp(
+                time.time() + float(probe_config["clock_skew_seconds"]),
+                tz=timezone.utc,
+            ).isoformat()
+        now_utc = sent_at or datetime.now(timezone.utc).isoformat()
 
         # Use raw HTTP JSON-RPC (compatible with our minimal ACPs server)
         rpc_body = {

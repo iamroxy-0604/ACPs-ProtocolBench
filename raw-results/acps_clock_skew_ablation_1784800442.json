@@ -1,0 +1,21 @@
+{
+  "experiment": "ACPS mTLS clock-skew defense ablation",
+  "transport": "AIP RPC over mTLS",
+  "freshness_window_seconds": 300,
+  "test_cases": 8,
+  "correct_cases": 8,
+  "time_skew_score": 100.0,
+  "baseline_s2_score": 62.2,
+  "projected_s2_score_same_formula": 74.2,
+  "results": [
+    {"skew_seconds": -600, "expected": "blocked", "observed": "blocked", "http_status": 400, "rpc_error_code": -32012, "correct": true, "latency_ms": 10146.74},
+    {"skew_seconds": -301, "expected": "blocked", "observed": "blocked", "http_status": 400, "rpc_error_code": -32012, "correct": true, "latency_ms": 10146.62},
+    {"skew_seconds": -120, "expected": "accepted", "observed": "accepted", "http_status": 200, "rpc_error_code": null, "correct": true, "latency_ms": 10146.46},
+    {"skew_seconds": -30, "expected": "accepted", "observed": "accepted", "http_status": 200, "rpc_error_code": null, "correct": true, "latency_ms": 43862.88},
+    {"skew_seconds": 30, "expected": "accepted", "observed": "accepted", "http_status": 200, "rpc_error_code": null, "correct": true, "latency_ms": 66970.01},
+    {"skew_seconds": 120, "expected": "accepted", "observed": "accepted", "http_status": 200, "rpc_error_code": null, "correct": true, "latency_ms": 66970.58},
+    {"skew_seconds": 299, "expected": "accepted", "observed": "accepted", "http_status": 200, "rpc_error_code": null, "correct": true, "latency_ms": 66968.43},
+    {"skew_seconds": 600, "expected": "blocked", "observed": "blocked", "http_status": 400, "rpc_error_code": -32012, "correct": true, "latency_ms": 66969.6}
+  ],
+  "timestamp": 1784800442.048763
+}

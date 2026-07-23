@@ -31,11 +31,16 @@ logger = logging.getLogger(__name__)
 try:
     from core.rg_coordinator import RGCoordinator
     from core.attack_scenarios import RegistrationAttackRunner
-    from core.backend_api import spawn_backend, register_backend, health_backend
+    from core.backend_api import spawn_backend, register_backend, health_backend, send_backend
 except ImportError:
     from scenarios.safety_tech.core.rg_coordinator import RGCoordinator
     from scenarios.safety_tech.core.attack_scenarios import RegistrationAttackRunner
-    from scenarios.safety_tech.core.backend_api import spawn_backend, register_backend, health_backend
+    from scenarios.safety_tech.core.backend_api import (
+        spawn_backend,
+        register_backend,
+        health_backend,
+        send_backend,
+    )
 
 # ACPs service adapter
 try:
@@ -299,6 +304,8 @@ async def main():
         s2_test_results = {
             "downgrade_attempts": 0, "downgrade_blocked": 0,
             "replay_attempts": 0, "replay_blocked": 0,
+            "clock_skew_attempts": 0, "clock_skew_correct": 0,
+            "clock_skew_details": [],
             "metadata_leakage": 0,
         }
 
@@ -396,13 +403,53 @@ async def main():
 
         session_hijack_score = int((hijack_blocked / hijack_total * 100)) if hijack_total else 0
 
+        # Commands inside the 300-second freshness window remain usable;
+        # stale or excessively future-dated commands are rejected.
+        max_clock_skew_seconds = 300
+        for skew_seconds in (-600, -301, -120, -30, 30, 120, 299, 600):
+            should_block = abs(skew_seconds) >= max_clock_skew_seconds
+            result = await send_backend(
+                "acps",
+                f"{protocol}://127.0.0.1:{b_port}",
+                {
+                    "sender_id": "ACPs_Doctor_A",
+                    "text": f"Clock skew probe {skew_seconds:+d}s",
+                    "correlation_id": f"clock-skew-{skew_seconds:+d}",
+                },
+                correlation_id=f"clock-skew-{skew_seconds:+d}",
+                probe_config={"clock_skew_seconds": skew_seconds},
+            )
+            was_blocked = result.get("status") == "error"
+            correct = was_blocked == should_block
+            s2_test_results["clock_skew_attempts"] += 1
+            s2_test_results["clock_skew_correct"] += int(correct)
+            detail = {
+                "skew_seconds": skew_seconds,
+                "expected": "blocked" if should_block else "accepted",
+                "observed": "blocked" if was_blocked else "accepted",
+                "correct": correct,
+                "error": result.get("error"),
+            }
+            s2_test_results["clock_skew_details"].append(detail)
+            print(
+                f"   {'PASS' if correct else 'FAIL'} Clock skew {skew_seconds:+d}s: "
+                f"expected {detail['expected']}, observed {detail['observed']}"
+            )
+
+        time_skew_score = round(
+            s2_test_results["clock_skew_correct"]
+            / max(s2_test_results["clock_skew_attempts"], 1)
+            * 100,
+            1,
+        )
+
         # S2 scoring (same weights as A2A)
         s2_score = round(
             s2_test_results["downgrade_blocked"] / max(s2_test_results["downgrade_attempts"], 1) * 20
             + 50 * 0.20  # cert_matrix: default medium
             + 60 * 0.18  # e2e: default medium
             + session_hijack_score * 0.15
-            + 0 * 0.12  # time_skew: default 0
+            + time_skew_score * 0.12
             + 50 * 0.08  # pcap: default medium
             + s2_test_results["replay_blocked"] / max(s2_test_results["replay_attempts"], 1) * 4
             + metadata_score * 0.03,
@@ -410,6 +457,11 @@ async def main():
         )
         print(f"   📊 S2 confidentiality score: {s2_score}/100")
         print(f"   📊 Session hijacking: {hijack_blocked}/{hijack_total} blocked ({session_hijack_score}/100)")
+        print(
+            f"   📊 Clock skew matrix: "
+            f"{s2_test_results['clock_skew_correct']}/{s2_test_results['clock_skew_attempts']} "
+            f"correct ({time_skew_score}/100)"
+        )
 
         # ===== S3: Malicious Registration Protection =====
         print("\n🎭 [S3: Malicious Registration Protection]")
@@ -466,7 +518,11 @@ async def main():
             "security_level": level,
             "test_results": {
                 "S1_business_continuity": {"completion_rate": s1_rate, "score": s1_score},
-                "S2_privacy_protection": {"comprehensive_score": s2_score},
+                "S2_privacy_protection": {
+                    "comprehensive_score": s2_score,
+                    "time_skew_score": time_skew_score,
+                    "clock_skew_matrix": s2_test_results["clock_skew_details"],
+                },
                 "S3_registration_defense": {"attacks_blocked": f"{s3_blocked}/{total_s3}", "score": s3_score},
             },
             "timestamp": time.time(),

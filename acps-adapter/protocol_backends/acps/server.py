@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 import uvicorn
 
 try:
@@ -50,6 +51,7 @@ def build_acps_app(agent_name: str) -> FastAPI:
     """Build a minimal FastAPI app that speaks AIP RPC protocol."""
 
     app = FastAPI(title=f"ACPs Agent - {agent_name}")
+    max_clock_skew_seconds = float(os.environ.get("ACPS_MAX_CLOCK_SKEW_SECONDS", "300"))
 
     @app.get("/health")
     async def health():
@@ -79,6 +81,50 @@ def build_acps_app(agent_name: str) -> FastAPI:
             else:
                 # Treat body itself as TaskCommand
                 command_data = body
+
+            # Enforce TaskCommand freshness before business processing.
+            sent_at = command_data.get("sentAt")
+            if not sent_at:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32010, "message": "Missing command sentAt"},
+                    },
+                )
+            try:
+                parsed_sent_at = datetime.fromisoformat(str(sent_at).replace("Z", "+00:00"))
+                if parsed_sent_at.tzinfo is None:
+                    parsed_sent_at = parsed_sent_at.replace(tzinfo=timezone.utc)
+                clock_skew_seconds = abs(
+                    (datetime.now(timezone.utc) - parsed_sent_at.astimezone(timezone.utc)).total_seconds()
+                )
+            except (TypeError, ValueError):
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32011, "message": "Invalid command sentAt"},
+                    },
+                )
+            if clock_skew_seconds >= max_clock_skew_seconds:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32012,
+                            "message": "Command timestamp outside freshness window",
+                            "data": {
+                                "observed_skew_seconds": round(clock_skew_seconds, 3),
+                                "max_skew_seconds": max_clock_skew_seconds,
+                            },
+                        },
+                    },
+                )
 
             # Extract text from command
             text_content = ""
